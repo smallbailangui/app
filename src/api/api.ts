@@ -66,9 +66,7 @@ let MOCK_USERS: AdminUserSummary[] = Array.from({ length: 10 }).map((_, i) => ({
   username: `用户${i}`,
   email: `user${i}@example.com`,
   enabled: i % 5 !== 0,
-  lastLogin: new Date().toISOString(),
-  quotaLimit: 1000,
-  usedSpace: Math.random() * 500
+  lastLogin: new Date().toISOString()
 }));
 
 export const authApi = {
@@ -428,9 +426,7 @@ export const adminApi = {
                 username: a.username,
                 email: a.email,
                 enabled: a.enabled !== false, // 如果后端没传 enabled 字段，默认视为 true
-                lastLogin: a.lastLogin ? new Date(a.lastLogin).toISOString() : "从未登录",
-                quotaLimit: a.quotaLimit || 100,
-                usedSpace: a.usedSpace || 0
+                lastLogin: a.lastLogin ? new Date(a.lastLogin).toISOString() : "从未登录"
             }));
         } catch { return []; }
     },
@@ -461,19 +457,28 @@ export const adminApi = {
         } catch { return []; }
     },
     
-    async addToBlacklist(type: "IP" | "EMAIL", value: string): Promise<BlacklistItem | null> {
+    async addToBlacklist(type: "IP" | "EMAIL", value: string): Promise<BlacklistItem> {
+        const res = await fetch(`${API_BASE_URL}/admin/blacklist`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ type, value })
+        });
+
+        let json: any = null;
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/blacklist`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${authToken}`
-                },
-                body: JSON.stringify({ type, value })
-            });
-            const json = await res.json();
-            return json.success ? json.data : null;
-        } catch { return null; }
+            json = await res.json();
+        } catch {
+            json = null;
+        }
+
+        if (!res.ok || !json?.success) {
+            throw new Error(json?.message || `添加失败 (HTTP ${res.status})`);
+        }
+
+        return json.data;
     },
     
     async removeFromBlacklist(id: number): Promise<void> {
@@ -503,6 +508,11 @@ export const adminApi = {
             return items.map((a: any) => ({
                 id: Number(a.id),
                 emailId: Number(a.emailId),
+                sender: a.sender ? String(a.sender) : "",
+                recipients: Array.isArray(a.recipients)
+                    ? a.recipients.map((r: any) => String(r))
+                    : (a.recipients ? String(a.recipients).split(",").map(s => s.trim()).filter(Boolean) : []),
+                subject: a.subject ? String(a.subject) : "",
                 errorMessage: a.errorMessage ?? "",
                 retryCount: Number(a.retryCount ?? 0),
                 status: a.status,

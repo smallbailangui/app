@@ -68,6 +68,9 @@ export interface GroupMember {
 export interface EmailQueueItem {
   id: number;
   emailId: number;
+  sender?: string;
+  recipients?: string[];
+  subject?: string;
   errorMessage: string;
   retryCount: number;
   status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";

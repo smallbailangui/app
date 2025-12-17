@@ -29,7 +29,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
   lockTo = false,
   forwardOf = null
 }) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   
   // Initialize state with props. 
   // Since the modal is conditionally rendered (if !isOpen return null), 
@@ -96,6 +96,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
         return;
       }
       const typed = to.split(",").map(s => s.trim()).filter(Boolean);
+      const selfEmail = user?.email ? user.email.trim().toLowerCase() : null;
       let groupRecipients: string[] = [];
       if (!lockTo) {
         for (const gid of selectedGroupIds) {
@@ -104,6 +105,9 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
             groupRecipients.push(...members.map(m => m.email));
           } catch {}
         }
+      }
+      if (selfEmail) {
+        groupRecipients = groupRecipients.filter(e => (e || "").trim().toLowerCase() !== selfEmail);
       }
       // Deduplicate
       const unique = Array.from(new Set([...typed, ...groupRecipients]));

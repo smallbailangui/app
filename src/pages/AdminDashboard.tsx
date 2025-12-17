@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from "react";
-import { Users, Server, Activity, Search, Shield, ShieldOff, HardDrive, Play, Trash2, RotateCw, RefreshCcw } from "lucide-react";
+import { Users, Server, Activity, Search, Shield, ShieldOff, Play, Trash2, RotateCw, RefreshCcw } from "lucide-react";
 import { adminApi } from "../api/api";
 import { AdminUserSummary, EmailQueueItem } from "../types";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -145,14 +145,13 @@ export const AdminDashboard = ({ mode = "dashboard" }: { mode?: "dashboard" | "u
                 <tr>
                   <th className="px-6 py-3">用户</th>
                   <th className="px-6 py-3">状态</th>
-                  <th className="px-6 py-3">存储</th>
                   <th className="px-6 py-3">最后登录</th>
                   <th className="px-6 py-3 text-right">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {isLoading ? (
-                  <tr><td colSpan={5} className="p-8 text-center">加载中...</td></tr>
+                  <tr><td colSpan={4} className="p-8 text-center">加载中...</td></tr>
                 ) : users.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
@@ -173,15 +172,6 @@ export const AdminDashboard = ({ mode = "dashboard" }: { mode?: "dashboard" | "u
                         <span className={`w-1.5 h-1.5 rounded-full ${user.enabled ? "bg-green-500" : "bg-red-500"}`}></span>
                         {user.enabled ? "正常" : "禁用"}
                       </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="w-24 bg-gray-200 rounded-full h-1.5 mb-1">
-                        <div 
-                          className="bg-blue-500 h-1.5 rounded-full" 
-                          style={{ width: `${(user.usedSpace / user.quotaLimit) * 100}%` }}
-                        ></div>
-                      </div>
-                      <div className="text-xs text-gray-400">{user.usedSpace.toFixed(1)}MB / {user.quotaLimit}MB</div>
                     </td>
                     <td className="px-6 py-4">
                       {new Date(user.lastLogin).toLocaleDateString()}
@@ -248,14 +238,13 @@ export const AdminDashboard = ({ mode = "dashboard" }: { mode?: "dashboard" | "u
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatCard icon={Users} label="总用户数" value={users.length} color="bg-blue-600" />
         <StatCard icon={Server} label="系统状态" value="在线" color="bg-green-500" />
         <StatCard icon={Activity} label="待处理队列" value={queue.filter(q => q.status === 'PENDING').length} color="bg-orange-500" />
-        <StatCard icon={HardDrive} label="存储使用率" value="45%" color="bg-purple-600" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+      <div className="grid grid-cols-1 gap-8 mb-8">
         {/* Queue Monitor */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-80">
             <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
@@ -299,6 +288,15 @@ export const AdminDashboard = ({ mode = "dashboard" }: { mode?: "dashboard" | "u
                                         }`}>{item.status}</span>
                                     </td>
                                     <td className="px-4 py-2 text-gray-500 text-xs">
+                                        <div className="text-gray-700 truncate max-w-[240px]" title={item.subject || ""}>
+                                            {item.subject || "（无主题）"}
+                                        </div>
+                                        <div
+                                            className="truncate max-w-[240px]"
+                                            title={(item.recipients || []).join(", ")}
+                                        >
+                                            收件人: {(item.recipients || []).join(", ") || "—"}
+                                        </div>
                                         <div>重试: {item.retryCount}</div>
                                         {item.errorMessage && <div className="text-red-500 truncate max-w-[100px]" title={item.errorMessage}>{item.errorMessage}</div>}
                                     </td>
@@ -314,36 +312,6 @@ export const AdminDashboard = ({ mode = "dashboard" }: { mode?: "dashboard" | "u
                         </tbody>
                     </table>
                 )}
-            </div>
-        </div>
-
-        {/* Quick User Actions (Placeholder for now, maybe Log stream) */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="font-semibold text-gray-800 mb-4">系统健康度</h2>
-            <div className="space-y-4">
-                <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600">CPU 使用率</span>
-                    <span className="font-medium text-gray-900">12%</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="bg-blue-500 h-2 rounded-full" style={{ width: "12%" }}></div>
-                </div>
-                
-                <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600">内存</span>
-                    <span className="font-medium text-gray-900">64%</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="bg-purple-500 h-2 rounded-full" style={{ width: "64%" }}></div>
-                </div>
-
-                <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600">磁盘空间</span>
-                    <span className="font-medium text-gray-900">45%</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="bg-green-500 h-2 rounded-full" style={{ width: "45%" }}></div>
-                </div>
             </div>
         </div>
       </div>
@@ -368,14 +336,13 @@ export const AdminDashboard = ({ mode = "dashboard" }: { mode?: "dashboard" | "u
               <tr>
                 <th className="px-6 py-3">用户</th>
                 <th className="px-6 py-3">状态</th>
-                <th className="px-6 py-3">存储</th>
                 <th className="px-6 py-3">最后登录</th>
                 <th className="px-6 py-3 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
-                <tr><td colSpan={5} className="p-8 text-center">加载中...</td></tr>
+                <tr><td colSpan={4} className="p-8 text-center">加载中...</td></tr>
               ) : users.map((user) => (
                 <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
@@ -396,15 +363,6 @@ export const AdminDashboard = ({ mode = "dashboard" }: { mode?: "dashboard" | "u
                       <span className={`w-1.5 h-1.5 rounded-full ${user.enabled ? "bg-green-500" : "bg-red-500"}`}></span>
                       {user.enabled ? "正常" : "禁用"}
                     </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="w-24 bg-gray-200 rounded-full h-1.5 mb-1">
-                      <div 
-                        className="bg-blue-500 h-1.5 rounded-full" 
-                        style={{ width: `${(user.usedSpace / user.quotaLimit) * 100}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-xs text-gray-400">{user.usedSpace.toFixed(1)}MB / {user.quotaLimit}MB</div>
                   </td>
                   <td className="px-6 py-4">
                     {new Date(user.lastLogin).toLocaleDateString()}

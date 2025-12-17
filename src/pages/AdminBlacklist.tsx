@@ -34,13 +34,13 @@ export const AdminBlacklist = () => {
     try {
       const added = await adminApi.addToBlacklist(newItemType, newItemValue);
       if (added) {
-        setList([...list, added]);
+        setList((prev) => [...prev, added]);
         setNewItemValue("");
       } else {
         setInfoModal({ open: true, title: "添加失败", message: "添加到黑名单失败。" });
       }
     } catch (e) {
-      setInfoModal({ open: true, title: "错误", message: "添加条目出错。" });
+      setInfoModal({ open: true, title: "添加失败", message: e instanceof Error ? e.message : "添加条目出错。" });
     }
   };
 
