@@ -492,28 +492,172 @@ export const adminApi = {
     async removeGroupMember(groupId: number, accountId: number): Promise<void> { return groupApi.removeGroupMember(groupId, accountId); },
     
     // --- 邮件队列 (如果后端没实现 HTTP 接口，这里只能留空) ---
-    async getQueueStatus(): Promise<EmailQueueItem[]> { return []; },
-    async processQueue(): Promise<void> {},
-    async resendQueueItem(queueId: number): Promise<void> {},
-    async clearQueue(): Promise<void> {},
-    
-    // --- 服务器配置 (读取后端 ServerConfig 接口) ---
-    async getServerConfig(): Promise<ServerConfig> {
+    async getQueueStatus(): Promise<EmailQueueItem[]> {
         try {
-            // 假设后端提供了获取配置的接口，如果没有则返回默认值
-            const res = await fetch(`${API_BASE_URL}/admin/server-config`, { // 需确认后端是否有此接口
+            const res = await fetch(`${API_BASE_URL}/queue/status`, {
                 headers: { Authorization: `Bearer ${authToken}` }
             });
             const json = await res.json();
-            if(json.success && json.data) return json.data;
-        } catch {}
-        return { smtpPort: 25, pop3Port: 110, domain: "localhost", smtpEnabled: true, pop3Enabled: true };
+            const items = json?.data ?? [];
+            if (!Array.isArray(items)) return [];
+            return items.map((a: any) => ({
+                id: Number(a.id),
+                emailId: Number(a.emailId),
+                errorMessage: a.errorMessage ?? "",
+                retryCount: Number(a.retryCount ?? 0),
+                status: a.status,
+                nextRetryTime: a.nextRetryTime ? String(a.nextRetryTime) : "",
+                createdAt: a.createdAt ? String(a.createdAt) : "",
+                updatedAt: a.updatedAt ? String(a.updatedAt) : ""
+            }));
+        } catch {
+            return [];
+        }
+    },
+    async processQueue(): Promise<void> {
+        await fetch(`${API_BASE_URL}/queue/process`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+    },
+    async resendQueueItem(queueId: number): Promise<void> {
+        await fetch(`${API_BASE_URL}/queue/resend/${queueId}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+    },
+    async clearQueue(): Promise<void> {
+        await fetch(`${API_BASE_URL}/queue/clear`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
     },
     
-    async updateServerConfig(config: ServerConfig): Promise<boolean> { return true; }, // 暂未实现
+    async getServerStatus(): Promise<string> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/server/status`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return json?.data ? String(json.data) : "";
+        } catch {
+            return "";
+        }
+    },
     
-    async getLogs(): Promise<LogEntry[]> { return []; },
-    async clearLogs(): Promise<void> {}
+    async getServerStats(): Promise<string> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/server/stats`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return json?.data ? String(json.data) : "";
+        } catch {
+            return "";
+        }
+    },
+
+    async startSmtpServer(): Promise<boolean> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/server/smtp/start`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return !!json?.success;
+        } catch {
+            return false;
+        }
+    },
+
+    async stopSmtpServer(): Promise<boolean> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/server/smtp/stop`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return !!json?.success;
+        } catch {
+            return false;
+        }
+    },
+
+    async startPop3Server(): Promise<boolean> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/server/pop3/start`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return !!json?.success;
+        } catch {
+            return false;
+        }
+    },
+
+    async stopPop3Server(): Promise<boolean> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/server/pop3/stop`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return !!json?.success;
+        } catch {
+            return false;
+        }
+    },
+
+    async getServerConfig(): Promise<ServerConfig> {
+        const status = await this.getServerStatus();
+        const smtpEnabled = status.includes("SMTP服务器运行中");
+        const pop3Enabled = status.includes("POP3服务器运行中");
+        return { smtpPort: 2525, pop3Port: 1100, domain: "localhost", smtpEnabled, pop3Enabled };
+    },
+    
+    async updateServerConfig(config: ServerConfig): Promise<boolean> {
+        const smtpOk = config.smtpEnabled ? await this.startSmtpServer() : await this.stopSmtpServer();
+        const pop3Ok = config.pop3Enabled ? await this.startPop3Server() : await this.stopPop3Server();
+        return smtpOk && pop3Ok;
+    },
+    
+    async getLogs(): Promise<LogEntry[]> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/logs?limit=500`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            const items = json?.data ?? [];
+            if (!json?.success || !Array.isArray(items)) return [];
+
+            return items.map((a: any) => {
+                const rawType = String(a.type ?? "SYSTEM").toUpperCase();
+                const service: LogEntry["service"] = rawType === "SMTP" ? "SMTP" : rawType === "POP3" ? "POP3" : "SYSTEM";
+                const status = String(a.status ?? "SUCCESS").toUpperCase();
+                const level: LogEntry["level"] = status === "FAILURE" ? "ERROR" : "INFO";
+                const action = a.action ? String(a.action) : "";
+                const details = a.details ? String(a.details) : "";
+                const operator = a.operator ? String(a.operator) : "";
+                const message = [action, details].filter(Boolean).join(": ") || operator || "";
+                return {
+                    id: Number(a.id),
+                    timestamp: a.createdAt ? String(a.createdAt) : new Date().toISOString(),
+                    service,
+                    level,
+                    message
+                };
+            });
+        } catch {
+            return [];
+        }
+    },
+    async clearLogs(): Promise<void> {
+        await fetch(`${API_BASE_URL}/admin/logs`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+    }
 };
 
 // --- Email Service ---
@@ -627,6 +771,19 @@ class RealEmailService implements IEmailService {
 
     async sendEmail(to: string[], subject: string, body: string, attachments: Attachment[] = [], isBroadcast?: boolean): Promise<boolean> {
         try {
+            if (isBroadcast) {
+                const res = await fetch(`${API_BASE_URL}/admin/emails/broadcast`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ subject, content: body, attachments })
+                });
+                const json = await res.json();
+                return !!json.success;
+            }
+
             const res = await fetch(`${API_BASE_URL}/emails/send`, {
                 method: "POST",
                 headers: {
@@ -634,10 +791,10 @@ class RealEmailService implements IEmailService {
                     Authorization: `Bearer ${authToken}`
                 },
                 body: JSON.stringify({
-                    to: to, // 传递数组
-                    subject: isBroadcast ? `[公告] ${subject}` : subject,
+                    to: to,
+                    subject: subject,
                     body: body,
-                    attachments: attachments, // 传递附件信息
+                    attachments: attachments,
                     cc: [],
                     bcc: []
                 })

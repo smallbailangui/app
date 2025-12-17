@@ -39,8 +39,6 @@ export interface AdminUserSummary {
   email: string;
   enabled: boolean;
   lastLogin: string;
-  quotaLimit: number;
-  usedSpace: number;
 }
 
 export interface BlacklistItem {

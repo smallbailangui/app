@@ -51,10 +51,11 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
     setTo(initialTo || "");
     setSubject(initialSubject || "");
     setBody(initialBody || "");
-    setIsBroadcast(false);
+    const shouldDefaultBroadcast = isAdmin && !lockTo && !(initialTo && initialTo.trim());
+    setIsBroadcast(shouldDefaultBroadcast);
     setSelectedGroupIds([]);
     setIsGroupOpen(false);
-  }, [isOpen, initialTo, initialSubject, initialBody]);
+  }, [isOpen, initialTo, initialSubject, initialBody, isAdmin, lockTo]);
 
   useEffect(() => {
     if (lockTo && isBroadcast) setIsBroadcast(false);
