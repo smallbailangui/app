@@ -22,6 +22,15 @@ export interface Email {
   date: string;
   isRead: boolean;
   isStarred: boolean;
+  attachments?: Attachment[];
+}
+
+export interface Attachment {
+  id: number;
+  fileName: string;
+  fileSize: number;
+  contentType: string;
+  filePath?: string;
 }
 
 export interface AdminUserSummary {

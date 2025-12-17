@@ -141,14 +141,20 @@ const InnerApp = () => {
   };
 
   const handleSendEmail = async (to: string[], subject: string, body: string, files: File[]) => {
-    // Note: Currently api.sendEmail does not support attachments, 
-    // but in a real app we would upload these files via FormData.
+    let uploadedAttachments: any[] = [];
     if (files.length > 0) {
-        console.log("Sending files:", files.map(f => f.name));
+        console.log("Uploading files:", files.map(f => f.name));
+        try {
+            uploadedAttachments = await api.uploadAttachments(files);
+        } catch (e) {
+            console.error("Failed to upload attachments", e);
+            setInfoModal({ open: true, title: "上传失败", message: "附件上传失败，请重试。" });
+            return;
+        }
     }
     
     const isBroadcast = to.length === 1 && to[0] === "ALL_USERS";
-    const success = await api.sendEmail(to, subject, body, isBroadcast);
+    const success = await api.sendEmail(to, subject, body, uploadedAttachments, isBroadcast);
     if (success) {
       // If it was a draft, delete the draft now that it's sent
       if (composeDraft?.id) {

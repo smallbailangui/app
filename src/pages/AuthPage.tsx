@@ -21,7 +21,7 @@ export const AuthPage = () => {
         await login(email, password);
         // Context updates automatically, App.tsx will re-render
       } else {
-        await register(email, password);
+        await register("username", email, password);
         alert("注册成功！请登录。");
         setIsLogin(true);
       }
@@ -112,7 +112,7 @@ export const AuthPage = () => {
         </form>
 
         <div className="mt-6 text-center text-xs text-gray-400">
-          <p>管理员演示: 登录名 <b>admin</b> / 任意密码</p>
+          <p>请使用注册的账号登录</p>
         </div>
       </div>
        <style>{`

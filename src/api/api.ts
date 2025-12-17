@@ -1,9 +1,9 @@
 
-import { Email, Folder, User, AdminUserSummary, BlacklistItem, Group, EmailQueueItem, GroupMember, ServerConfig, LogEntry } from "../types";
+import { Email, Folder, User, AdminUserSummary, BlacklistItem, Group, EmailQueueItem, GroupMember, ServerConfig, LogEntry, Attachment } from "../types";
 
 // --- Configuration ---
-const USE_MOCK_DATA = true; 
-const API_BASE_URL = "http://localhost:8080/api";
+const USE_MOCK_DATA = false; 
+const API_BASE_URL = "http://localhost:8000/api";
 
 // --- Auth State Management ---
 let authToken = localStorage.getItem("auth_token");
@@ -114,14 +114,79 @@ export const authApi = {
       }
       throw new Error("凭据无效");
     }
-    // ... Real implementation ...
-    return null;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier, password })
+      });
+      
+      if (!res.ok) {
+        let errorMessage = `请求失败: ${res.status}`;
+        try {
+            const errorJson = await res.json();
+            errorMessage = errorJson.message || errorMessage;
+        } catch {
+            // If response is not JSON (e.g. 500 HTML page), use generic message
+            errorMessage = `服务器连接错误 (${res.status})，请检查后端服务日志`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      const json = await res.json();
+      if (json.success && json.data) {
+        const { token, user } = json.data;
+        authToken = token;
+        localStorage.setItem("auth_token", token);
+        
+        const mappedUser: User = {
+          id: String(user.id),
+          name: user.username,
+          email: user.email,
+          role: user.isAdmin ? "ADMIN" : "USER",
+          signature: user.signature
+        };
+        cachedUser = mappedUser;
+        return mappedUser;
+      }
+      throw new Error(json.message || "登录失败");
+    } catch (e: any) {
+      console.error("Login error:", e);
+      throw e;
+    }
   },
 
-  async register(email: string, password: string): Promise<boolean> {
+  async register(username: string, email: string, password: string): Promise<boolean> {
     if (USE_MOCK_DATA) return true;
-    // ... Real implementation ...
-    return true;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, email, password })
+      });
+      
+      if (!res.ok) {
+        let errorMessage = `请求失败: ${res.status}`;
+        try {
+            const errorJson = await res.json();
+            errorMessage = errorJson.message || errorMessage;
+        } catch {
+            errorMessage = `服务器连接错误 (${res.status})，请检查后端服务日志`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      const json = await res.json();
+      if (json.success) {
+        return true;
+      }
+      throw new Error(json.message || "注册失败");
+    } catch (e: any) {
+      console.error("Register error:", e);
+      throw e;
+    }
   },
 
   logout() {
@@ -138,304 +203,497 @@ export const authApi = {
 };
 
 // --- User Settings API ---
-export const userApi = {
-  async updateProfile(name: string, signature: string): Promise<boolean> {
-    if(USE_MOCK_DATA) {
-      if(cachedUser) {
-        cachedUser = { ...cachedUser, name, signature };
-      }
-      return true;
-    }
-    try {
-      const res = await fetch(`${API_BASE_URL}/users/profile`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: authToken ? `Bearer ${authToken}` : ""
-        },
-        body: JSON.stringify({ username: name, signature })
-      });
-      const json = await res.json();
-      return !!json?.success;
-    } catch {
-      return false;
-    }
-  },
+// --- src/api/api.ts 中的 userApi ---
 
-  async changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
-    if(USE_MOCK_DATA) return true;
-    try {
-      const res = await fetch(`${API_BASE_URL}/users/password`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: authToken ? `Bearer ${authToken}` : ""
-        },
-        body: JSON.stringify({ oldPassword, newPassword, confirmPassword: newPassword })
-      });
-      const json = await res.json();
-      return !!json?.success;
-    } catch {
-      return false;
+export const userApi = {
+    async updateProfile(name: string, signature: string): Promise<boolean> {
+        try {
+            if (!cachedUser) return false;
+            
+            // 后端接口要求 PUT /api/users/profile
+            // 注意：根据文档，后端可能需要完整的 User 对象或者至少包含 ID
+            const res = await fetch(`${API_BASE_URL}/users/profile`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    id: Number(cachedUser.id), // 确保转换为数字
+                    username: name,
+                    email: cachedUser.email, // 补全必填信息，防止后端校验失败
+                    signature: signature
+                })
+            });
+            
+            const json = await res.json();
+            if (json.success) {
+                // 更新本地缓存
+                cachedUser.name = name;
+                cachedUser.signature = signature;
+                return true;
+            }
+            return false;
+        } catch (e) {
+            console.error("Update profile failed", e);
+            return false;
+        }
+    },
+    
+    async changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/users/password`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    oldPassword,
+                    newPassword,
+                    confirmPassword: newPassword // 后端文档要求 confirmPassword 字段
+                })
+            });
+            const json = await res.json();
+            return !!json.success;
+        } catch {
+            return false;
+        }
     }
-  }
 };
 
 // --- User Groups API ---
+// --- src/api/api.ts 中的 groupApi ---
+
 export const groupApi = {
     async getJoinedGroups(): Promise<Group[]> {
-        if(USE_MOCK_DATA) return MOCK_GROUPS.slice(0, 2);
-        return [];
+        try {
+            const res = await fetch(`${API_BASE_URL}/groups/joined?page=0&size=100`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return json.success && json.data ? json.data.content || [] : [];
+        } catch { return []; }
     },
+    
     async getManagedGroups(): Promise<Group[]> {
-      if (USE_MOCK_DATA) {
-        const user = await authApi.getCurrentUser();
-        return MOCK_GROUPS.filter(g => g.ownerId === user?.id);
-      }
-      return [];
+        try {
+            const res = await fetch(`${API_BASE_URL}/groups/created?page=0&size=100`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return json.success && json.data ? json.data.content || [] : [];
+        } catch { return []; }
     },
+    
     async searchGroups(query: string): Promise<Group[]> {
-        if(USE_MOCK_DATA) return MOCK_GROUPS.filter(g => g.name.toLowerCase().includes(query.toLowerCase()));
-        return [];
+        try {
+            // 如果 query 为空，则获取所有群组(或者不搜)
+            const endpoint = query
+                ? `/groups/search?query=${encodeURIComponent(query)}&page=0&size=20`
+                : `/groups/all?page=0&size=20`;
+            
+            const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return json.data?.content || [];
+        } catch { return []; }
     },
+    
     async getGroupMembers(groupId: number): Promise<GroupMember[]> {
-      if(USE_MOCK_DATA) return MOCK_GROUP_MEMBERS[groupId] || [];
-      return [];
+        try {
+            const res = await fetch(`${API_BASE_URL}/groups/${groupId}/members`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            // 后端返回的 joinedAt 是时间戳或字符串，前端可以直接展示
+            return json.data?.content || [];
+        } catch { return []; }
     },
+    
     async createGroup(name: string, description: string): Promise<boolean> {
-      if (USE_MOCK_DATA) {
-        const user = await authApi.getCurrentUser();
-        const newGroup: Group = {
-          id: Date.now(),
-          ownerId: user?.id || "0",
-          name,
-          description,
-          memberCount: 1,
-          createdAt: new Date().toISOString()
-        };
-        MOCK_GROUPS.push(newGroup);
-        return true;
-      }
-      return true;
+        try {
+            const res = await fetch(`${API_BASE_URL}/groups`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ name, description })
+            });
+            const json = await res.json();
+            return !!json.success;
+        } catch { return false; }
     },
+    
     async updateGroup(groupId: number, name: string, description: string): Promise<boolean> {
-      if(USE_MOCK_DATA) {
-        MOCK_GROUPS = MOCK_GROUPS.map(g => g.id === groupId ? { ...g, name, description } : g);
-        return true;
-      }
-      return true;
+        try {
+            const res = await fetch(`${API_BASE_URL}/groups`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`
+                },
+                // 后端更新模型需要 ID
+                body: JSON.stringify({ id: groupId, name, description })
+            });
+            const json = await res.json();
+            return !!json.success;
+        } catch { return false; }
     },
+    
     async deleteGroup(id: number): Promise<void> {
-      if(USE_MOCK_DATA) {
-        MOCK_GROUPS = MOCK_GROUPS.filter(g => g.id !== id);
-      }
-    },
-    async joinGroup(groupId: number): Promise<boolean> { return true; },
-    async leaveGroup(groupId: number): Promise<void> {},
-    async addGroupMember(groupId: number, email: string): Promise<boolean> {
-      if(USE_MOCK_DATA) {
-        const members = MOCK_GROUP_MEMBERS[groupId] || [];
-        members.push({
-           id: Date.now(),
-           accountId: Math.floor(Math.random() * 1000),
-           username: email.split('@')[0],
-           email: email,
-           joinedAt: new Date().toISOString()
+        await fetch(`${API_BASE_URL}/groups/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` }
         });
-        MOCK_GROUP_MEMBERS[groupId] = members;
-        const groupIndex = MOCK_GROUPS.findIndex(g => g.id === groupId);
-        if (groupIndex > -1) MOCK_GROUPS[groupIndex].memberCount += 1;
-        return true;
-      }
-      return true;
     },
+    
+    async joinGroup(groupId: number): Promise<boolean> {
+        // 暂无直接加入接口，通常需要申请或被邀请
+        console.warn("Join group API not implemented in backend");
+        return false;
+    },
+    
+    async leaveGroup(groupId: number): Promise<void> {
+        if (!cachedUser) return;
+        // 退出群组即移除自己
+        await fetch(`${API_BASE_URL}/groups/${groupId}/members/${cachedUser.id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+    },
+    
+    // 重点修改：处理添加成员逻辑
+    async addGroupMember(groupId: number, emailOrId: string): Promise<boolean> {
+        // 判断输入的是否包含 @ 符号，如果有则认为是邮箱
+        const isEmail = emailOrId.includes('@');
+        
+        const payload: any = { groupId };
+        
+        if (isEmail) {
+            payload.memberEmail = emailOrId;
+        } else {
+            // 尝试转数字，如果是纯数字 ID
+            const id = Number(emailOrId);
+            if (!isNaN(id)) {
+                payload.accountId = id;
+            } else {
+                // 既不是邮箱也不是数字，可能是用户名？目前暂按邮箱处理或报错
+                payload.memberEmail = emailOrId;
+            }
+        }
+        
+        try {
+            const res = await fetch(`${API_BASE_URL}/groups/members`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`
+                },
+                body: JSON.stringify(payload)
+            });
+            const json = await res.json();
+            if (!json.success) {
+                alert(json.message || "添加失败");
+            }
+            return !!json.success;
+        } catch { return false; }
+    },
+    
     async removeGroupMember(groupId: number, accountId: number): Promise<void> {
-     if(USE_MOCK_DATA) {
-       const members = MOCK_GROUP_MEMBERS[groupId] || [];
-       MOCK_GROUP_MEMBERS[groupId] = members.filter(m => m.accountId !== accountId);
-       const groupIndex = MOCK_GROUPS.findIndex(g => g.id === groupId);
-       if (groupIndex > -1) MOCK_GROUPS[groupIndex].memberCount = Math.max(0, MOCK_GROUPS[groupIndex].memberCount - 1);
-     }
-   },
+        await fetch(`${API_BASE_URL}/groups/${groupId}/members/${accountId}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+    },
 };
 
 // --- Admin API ---
+// --- src/api/api.ts 中的 adminApi ---
+
 export const adminApi = {
-  // Users
-  async getUsers(page = 0, size = 20): Promise<AdminUserSummary[]> {
-    if (USE_MOCK_DATA) {
-      await new Promise(r => setTimeout(r, 500));
-      return [...MOCK_USERS];
-    }
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/users?page=${page}&size=${size}`, {
-        headers: { Authorization: authToken ? `Bearer ${authToken}` : "" }
-      });
-      const json = await res.json();
-      const content = json?.data?.content ?? [];
-      return content.map((a: any) => ({
-        id: a.id ?? 0,
-        username: a.username ?? "",
-        email: a.email ?? "",
-        enabled: !!a.enabled,
-        lastLogin: a.lastLogin ?? "",
-        quotaLimit: Number(a.quotaLimit ?? 0),
-        usedSpace: Number(a.usedSpace ?? 0)
-      })) as AdminUserSummary[];
-    } catch {
-      return [];
-    }
-  },
-
-  async toggleUserStatus(id: number, enabled: boolean): Promise<void> {
-    if (USE_MOCK_DATA) {
-      MOCK_USERS = MOCK_USERS.map(u => u.id === id ? { ...u, enabled } : u);
-      return;
-    }
-    await fetch(`${API_BASE_URL}/admin/users/${id}/status?enabled=${enabled}`, {
-      method: "PUT",
-      headers: { Authorization: authToken ? `Bearer ${authToken}` : "" }
-    });
-  },
-  async deleteUser(id: number): Promise<void> {
-    if (USE_MOCK_DATA) {
-      MOCK_USERS = MOCK_USERS.filter(u => u.id !== id);
-      return;
-    }
-    throw new Error("删除用户接口未在 api-docs 中定义");
-  },
-
-  // Blacklist
-  async getBlacklist(): Promise<BlacklistItem[]> {
-    if (USE_MOCK_DATA) {
-        return [
-            { id: 1, type: "IP", value: "192.168.1.55", createdAt: new Date().toISOString() },
-            { id: 2, type: "EMAIL", value: "spammer@bad.com", createdAt: new Date().toISOString() }
-        ];
-    }
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/blacklist`, {
-        headers: { Authorization: authToken ? `Bearer ${authToken}` : "" }
-      });
-      const json = await res.json();
-      return (json?.data ?? []) as BlacklistItem[];
-    } catch {
-      return [];
-    }
-  },
-  async addToBlacklist(type: "IP" | "EMAIL", value: string): Promise<BlacklistItem | null> {
-    if (USE_MOCK_DATA) return { id: Date.now(), type, value, createdAt: new Date().toISOString() };
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/blacklist`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: authToken ? `Bearer ${authToken}` : ""
-        },
-        body: JSON.stringify({ type, value })
-      });
-      const json = await res.json();
-      return (json?.data ?? null) as BlacklistItem | null;
-    } catch {
-      return null;
-    }
-  },
-  async removeFromBlacklist(id: number): Promise<void> {
-    if (USE_MOCK_DATA) return;
-    await fetch(`${API_BASE_URL}/admin/blacklist/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: authToken ? `Bearer ${authToken}` : "" }
-    });
-  },
-
-  // Groups (Admin)
-  async getGroups(): Promise<Group[]> { return groupApi.searchGroups(""); },
-  async createGroup(name: string, description: string): Promise<boolean> { return groupApi.createGroup(name, description); },
-  async deleteGroup(id: number): Promise<void> { return groupApi.deleteGroup(id); },
-  async getGroupMembers(groupId: number): Promise<GroupMember[]> { return groupApi.getGroupMembers(groupId); },
-  async addGroupMember(groupId: number, email: string): Promise<boolean> { return groupApi.addGroupMember(groupId, email); },
-  async removeGroupMember(groupId: number, accountId: number): Promise<void> { return groupApi.removeGroupMember(groupId, accountId); },
-
-  // Queue
-  async getQueueStatus(): Promise<EmailQueueItem[]> {
-      if (USE_MOCK_DATA) {
-          return [
-              { id: 101, emailId: 50, errorMessage: "连接超时", retryCount: 1, status: "FAILED", nextRetryTime: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-              { id: 102, emailId: 51, errorMessage: "", retryCount: 0, status: "PROCESSING", nextRetryTime: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-          ];
-      }
-      try {
-        const res = await fetch(`${API_BASE_URL}/queue/status`, {
-          headers: { Authorization: authToken ? `Bearer ${authToken}` : "" }
+    // --- 用户管理 ---
+    async getUsers(page = 0, size = 20): Promise<AdminUserSummary[]> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/users?page=${page}&size=${size}`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            const content = json?.data?.content ?? [];
+            
+            return content.map((a: any) => ({
+                id: a.id,
+                username: a.username,
+                email: a.email,
+                enabled: a.enabled !== false, // 如果后端没传 enabled 字段，默认视为 true
+                lastLogin: a.lastLogin ? new Date(a.lastLogin).toISOString() : "从未登录",
+                quotaLimit: a.quotaLimit || 100,
+                usedSpace: a.usedSpace || 0
+            }));
+        } catch { return []; }
+    },
+    
+    async toggleUserStatus(id: number, enabled: boolean): Promise<void> {
+        // 假设后端有类似接口，如果没有对应接口，此功能在前端会报错 404
+        await fetch(`${API_BASE_URL}/admin/users/${id}/status?enabled=${enabled}`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${authToken}` }
         });
-        const json = await res.json();
-        return (json?.data ?? []) as EmailQueueItem[];
-      } catch {
-        return [];
-      }
-  },
-  async processQueue(): Promise<void> {
-    if (USE_MOCK_DATA) return;
-    await fetch(`${API_BASE_URL}/queue/process`, {
-      method: "POST",
-      headers: { Authorization: authToken ? `Bearer ${authToken}` : "" }
-    });
-  },
-  async resendQueueItem(queueId: number): Promise<void> {
-    if (USE_MOCK_DATA) return;
-    await fetch(`${API_BASE_URL}/queue/resend/${queueId}`, {
-      method: "POST",
-      headers: { Authorization: authToken ? `Bearer ${authToken}` : "" }
-    });
-  },
-  async clearQueue(): Promise<void> {
-    if (USE_MOCK_DATA) return;
-    await fetch(`${API_BASE_URL}/queue/clear`, {
-      method: "DELETE",
-      headers: { Authorization: authToken ? `Bearer ${authToken}` : "" }
-    });
-  },
-
-  // Server Config & Logs
-  async getServerConfig(): Promise<ServerConfig> {
-      if(USE_MOCK_DATA) return { ...MOCK_SERVER_CONFIG };
-      return MOCK_SERVER_CONFIG;
-  },
-  async updateServerConfig(config: ServerConfig): Promise<boolean> {
-      if(USE_MOCK_DATA) {
-          MOCK_SERVER_CONFIG = config;
-          return true;
-      }
-      return true;
-  },
-  async getLogs(): Promise<LogEntry[]> {
-      if(USE_MOCK_DATA) return [...MOCK_LOGS];
-      return [];
-  },
-  async clearLogs(): Promise<void> {
-      if(USE_MOCK_DATA) MOCK_LOGS = [];
-  }
+    },
+    
+    async deleteUser(id: number): Promise<void> {
+        await fetch(`${API_BASE_URL}/admin/users/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+    },
+    
+    // --- 黑名单管理 ---
+    async getBlacklist(): Promise<BlacklistItem[]> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/blacklist`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            return json.data || [];
+        } catch { return []; }
+    },
+    
+    async addToBlacklist(type: "IP" | "EMAIL", value: string): Promise<BlacklistItem | null> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/blacklist`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ type, value })
+            });
+            const json = await res.json();
+            return json.success ? json.data : null;
+        } catch { return null; }
+    },
+    
+    async removeFromBlacklist(id: number): Promise<void> {
+        await fetch(`${API_BASE_URL}/admin/blacklist/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+    },
+    
+    // --- 管理员群组操作 (复用 groupApi) ---
+    async getGroups(): Promise<Group[]> { return groupApi.searchGroups(""); },
+    async createGroup(name: string, description: string): Promise<boolean> { return groupApi.createGroup(name, description); },
+    async deleteGroup(id: number): Promise<void> { return groupApi.deleteGroup(id); },
+    async getGroupMembers(groupId: number): Promise<GroupMember[]> { return groupApi.getGroupMembers(groupId); },
+    async addGroupMember(groupId: number, email: string): Promise<boolean> { return groupApi.addGroupMember(groupId, email); },
+    async removeGroupMember(groupId: number, accountId: number): Promise<void> { return groupApi.removeGroupMember(groupId, accountId); },
+    
+    // --- 邮件队列 (如果后端没实现 HTTP 接口，这里只能留空) ---
+    async getQueueStatus(): Promise<EmailQueueItem[]> { return []; },
+    async processQueue(): Promise<void> {},
+    async resendQueueItem(queueId: number): Promise<void> {},
+    async clearQueue(): Promise<void> {},
+    
+    // --- 服务器配置 (读取后端 ServerConfig 接口) ---
+    async getServerConfig(): Promise<ServerConfig> {
+        try {
+            // 假设后端提供了获取配置的接口，如果没有则返回默认值
+            const res = await fetch(`${API_BASE_URL}/admin/server-config`, { // 需确认后端是否有此接口
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            if(json.success && json.data) return json.data;
+        } catch {}
+        return { smtpPort: 25, pop3Port: 110, domain: "localhost", smtpEnabled: true, pop3Enabled: true };
+    },
+    
+    async updateServerConfig(config: ServerConfig): Promise<boolean> { return true; }, // 暂未实现
+    
+    async getLogs(): Promise<LogEntry[]> { return []; },
+    async clearLogs(): Promise<void> {}
 };
 
 // --- Email Service ---
 export interface IEmailService {
   getEmails(folder: Folder): Promise<Email[]>;
   getEmail(id: string): Promise<Email | undefined>;
-  sendEmail(to: string[], subject: string, body: string, isBroadcast?: boolean): Promise<boolean>; // Updated
+  uploadAttachments(files: File[]): Promise<Attachment[]>;
+  sendEmail(to: string[], subject: string, body: string, attachments?: Attachment[], isBroadcast?: boolean): Promise<boolean>;
   saveDraft(to: string[], subject: string, body: string): Promise<boolean>;
   markAsRead(id: string): Promise<void>;
   toggleStar(id: string, isStarred: boolean): Promise<void>;
   deleteEmail(id: string): Promise<void>;
 }
 
+// ... (保留之前的 import 和 api 定义)
+
 class RealEmailService implements IEmailService {
-  async getEmails(folder: Folder): Promise<Email[]> { return []; }
-  async getEmail(id: string): Promise<Email | undefined> { return undefined; }
-  async sendEmail(to: string[], subject: string, body: string): Promise<boolean> { return true; }
-  async saveDraft(to: string[], subject: string, body: string): Promise<boolean> { return true; }
-  async markAsRead(id: string): Promise<void> {}
-  async toggleStar(id: string, isStarred: boolean): Promise<void> {}
-  async deleteEmail(id: string): Promise<void> {}
+    
+    // 1. 获取邮件列表 (收件箱/发件箱/草稿箱等)
+    async getEmails(folder: Folder): Promise<Email[]> {
+        try {
+            // 将前端 folder 类型转换为后端路径参数
+            // 前端: 'inbox', 'sent', 'drafts', 'trash', 'starred'
+            const res = await fetch(`${API_BASE_URL}/emails/${folder}?page=0&size=50`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            
+            if (!json.success || !json.data) return [];
+            
+            const content = json.data.content || [];
+            
+            // 映射后端实体到前端 Email 接口
+            return content.map((e: any) => ({
+                id: String(e.id),
+                folder: folder,
+                from: {
+                    name: e.sender ? e.sender.split('@')[0] : 'Unknown',
+                    email: e.sender
+                },
+                to: Array.isArray(e.recipients) ? e.recipients : (e.recipients ? e.recipients.split(',') : []),
+                subject: e.subject,
+                body: e.body,
+                snippet: e.body ? e.body.substring(0, 50) + '...' : "",
+                date: e.receivedTime || e.createdAt || e.sentAt, // 优先使用 receivedTime
+                isRead: e.isRead,
+                isStarred: e.isStarred,
+                attachments: e.attachments || [] // 映射附件
+            }));
+            
+        } catch(e) {
+            console.error("Get emails error:", e);
+            return [];
+        }
+    }
+    
+    // 2. 获取邮件详情
+    async getEmail(id: string): Promise<Email | undefined> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/emails/detail/${id}`, {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+            const json = await res.json();
+            if (json.success && json.data) {
+                const e = json.data;
+                return {
+                    id: String(e.id),
+                    folder: 'inbox', // 这里的 folder 可能需要从后端获取，或者在列表页处理
+                    from: { name: e.sender, email: e.sender },
+                    to: Array.isArray(e.recipients) ? e.recipients : (e.recipients ? e.recipients.split(',') : []),
+                    subject: e.subject,
+                    body: e.body,
+                    snippet: "",
+                    date: e.receivedTime || e.createdAt,
+                    isRead: e.isRead,
+                    isStarred: e.isStarred,
+                    attachments: e.attachments || []
+                };
+            }
+        } catch {}
+        return undefined;
+    }
+    
+    // 3. 发送邮件
+    async uploadAttachments(files: File[]): Promise<Attachment[]> {
+        if (!files || files.length === 0) return [];
+        try {
+            const formData = new FormData();
+            files.forEach(file => {
+                formData.append("files", file);
+            });
+
+            const res = await fetch(`${API_BASE_URL}/attachments/upload`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${authToken}`
+                    // 不要设置 Content-Type，浏览器会自动设置为 multipart/form-data 并带上 boundary
+                },
+                body: formData
+            });
+            const json = await res.json();
+            if (json.success && json.data) {
+                return json.data;
+            }
+            return [];
+        } catch (e) {
+            console.error("Upload failed", e);
+            return [];
+        }
+    }
+
+    async sendEmail(to: string[], subject: string, body: string, attachments: Attachment[] = [], isBroadcast?: boolean): Promise<boolean> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/emails/send`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    to: to, // 传递数组
+                    subject: isBroadcast ? `[公告] ${subject}` : subject,
+                    body: body,
+                    attachments: attachments, // 传递附件信息
+                    cc: [],
+                    bcc: []
+                })
+            });
+            const json = await res.json();
+            return !!json.success;
+        } catch { return false; }
+    }
+    
+    // 4. 保存草稿
+    async saveDraft(to: string[], subject: string, body: string): Promise<boolean> {
+        try {
+            const res = await fetch(`${API_BASE_URL}/emails/drafts`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ to, subject, body })
+            });
+            const json = await res.json();
+            return !!json.success;
+        } catch { return false; }
+    }
+    
+    // 5. 标记已读
+    async markAsRead(id: string): Promise<void> {
+        await fetch(`${API_BASE_URL}/emails/${id}/read`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`
+            },
+            body: "true" // 设置为已读
+        });
+    }
+    
+    // 6. 标记星标
+    async toggleStar(id: string, isStarred: boolean): Promise<void> {
+        await fetch(`${API_BASE_URL}/emails/${id}/star`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`
+            },
+            body: String(isStarred)
+        });
+    }
+    
+    // 7. 删除邮件
+    async deleteEmail(id: string): Promise<void> {
+        await fetch(`${API_BASE_URL}/emails/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+    }
 }
 
 const MOCK_EMAILS: Email[] = [
@@ -477,8 +735,18 @@ class MockEmailService implements IEmailService {
   async getEmail(id: string): Promise<Email | undefined> {
     return this.emails.find((e) => e.id === id);
   }
+
+  async uploadAttachments(files: File[]): Promise<Attachment[]> {
+      return files.map((f, i) => ({
+          id: i,
+          fileName: f.name,
+          fileSize: f.size,
+          contentType: f.type,
+          filePath: "mock/path"
+      }));
+  }
   
-  async sendEmail(to: string[], subject: string, body: string, isBroadcast?: boolean): Promise<boolean> {
+  async sendEmail(to: string[], subject: string, body: string, attachments: Attachment[] = [], isBroadcast?: boolean): Promise<boolean> {
     await new Promise((resolve) => setTimeout(resolve, 800));
     // Simulate adding to sent
     this.emails.unshift({
@@ -491,7 +759,8 @@ class MockEmailService implements IEmailService {
         snippet: body.substring(0, 50),
         date: new Date().toISOString(),
         isRead: true,
-        isStarred: false
+        isStarred: false,
+        attachments: attachments
     });
     return true;
   }

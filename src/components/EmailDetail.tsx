@@ -7,7 +7,9 @@ import {
   Reply,
   Forward,
   ChevronLeft,
-  Star
+  Star,
+  Paperclip,
+  Download
 } from "lucide-react";
 import { Email } from "../types";
 
@@ -94,6 +96,44 @@ export const EmailDetail: React.FC<EmailDetailProps> = ({
         {/* 移除 AI 功能按钮区域 */}
 
         {/* 移除 AI 摘要区域 */}
+
+        {/* Attachments */}
+        {email.attachments && email.attachments.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+              <Paperclip size={16} />
+              <span>{email.attachments.length} 个附件</span>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {email.attachments.map((att, idx) => (
+                <div key={idx} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group">
+                  <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center text-gray-500 font-medium text-xs uppercase">
+                    {att.fileName.split('.').pop() || 'FILE'}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate max-w-[200px]" title={att.fileName}>
+                      {att.fileName}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {(att.fileSize / 1024).toFixed(1)} KB
+                    </div>
+                  </div>
+                  {att.filePath && (
+                     <a 
+                       href={`http://localhost:8000/api/attachments/download/${att.id}`} 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                       title="下载"
+                     >
+                       <Download size={16} />
+                     </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="text-gray-800 leading-relaxed whitespace-pre-line border-b border-gray-100 pb-12 mb-8">
           {email.body}
