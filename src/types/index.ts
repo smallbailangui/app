@@ -38,6 +38,7 @@ export interface AdminUserSummary {
   username: string;
   email: string;
   enabled: boolean;
+  isAdmin: boolean;
   lastLogin: string;
 }
 

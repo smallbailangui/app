@@ -10,7 +10,6 @@ export const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState<"profile" | "security" | "server">("profile");
   
   // Profile State
-  const [name, setName] = useState(user?.name || "");
   const [signature, setSignature] = useState(user?.signature || "");
   
   // Password State
@@ -39,7 +38,7 @@ export const SettingsPage = () => {
     setLoading(true);
     setMessage(null);
     try {
-      await userApi.updateProfile(name, signature);
+      await userApi.updateProfile(signature);
       setMessage({ type: "success", text: "个人资料更新成功" });
     } catch (e) {
       setMessage({ type: "error", text: "更新个人资料失败" });
@@ -132,15 +131,6 @@ export const SettingsPage = () => {
 
             {activeTab === "profile" && (
               <form onSubmit={handleProfileUpdate} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">全名</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
                 <div>
                    <label className="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
                    <input

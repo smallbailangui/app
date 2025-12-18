@@ -65,6 +65,7 @@ let MOCK_USERS: AdminUserSummary[] = Array.from({ length: 10 }).map((_, i) => ({
   id: i,
   username: `用户${i}`,
   email: `user${i}@example.com`,
+  isAdmin: i === 0,
   enabled: i % 5 !== 0,
   lastLogin: new Date().toISOString()
 }));
@@ -204,7 +205,7 @@ export const authApi = {
 // --- src/api/api.ts 中的 userApi ---
 
 export const userApi = {
-    async updateProfile(name: string, signature: string): Promise<boolean> {
+    async updateProfile(signature: string): Promise<boolean> {
         try {
             if (!cachedUser) return false;
             
@@ -217,9 +218,6 @@ export const userApi = {
                     Authorization: `Bearer ${authToken}`
                 },
                 body: JSON.stringify({
-                    id: Number(cachedUser.id), // 确保转换为数字
-                    username: name,
-                    email: cachedUser.email, // 补全必填信息，防止后端校验失败
                     signature: signature
                 })
             });
@@ -227,7 +225,6 @@ export const userApi = {
             const json = await res.json();
             if (json.success) {
                 // 更新本地缓存
-                cachedUser.name = name;
                 cachedUser.signature = signature;
                 return true;
             }
@@ -426,9 +423,51 @@ export const adminApi = {
                 username: a.username,
                 email: a.email,
                 enabled: a.enabled !== false, // 如果后端没传 enabled 字段，默认视为 true
+                isAdmin: a.isAdmin === true,
                 lastLogin: a.lastLogin ? new Date(a.lastLogin).toISOString() : "从未登录"
             }));
         } catch { return []; }
+    },
+
+    async createUser(username: string, email: string, password: string): Promise<void> {
+        const res = await fetch(`${API_BASE_URL}/admin/users`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ username, email, password })
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.success) {
+            throw new Error(json?.message || `创建用户失败 (HTTP ${res.status})`);
+        }
+    },
+
+    async updateUserRole(id: number, isAdmin: boolean): Promise<void> {
+        const res = await fetch(`${API_BASE_URL}/admin/users/${id}/role?isAdmin=${isAdmin}`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.success) {
+            throw new Error(json?.message || `更新用户权限失败 (HTTP ${res.status})`);
+        }
+    },
+    
+    async resetUserPassword(id: number, newPassword: string): Promise<void> {
+        const res = await fetch(`${API_BASE_URL}/admin/users/${id}/password`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ newPassword, confirmPassword: newPassword })
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.success) {
+            throw new Error(json?.message || `修改用户密码失败 (HTTP ${res.status})`);
+        }
     },
     
     async toggleUserStatus(id: number, enabled: boolean): Promise<void> {
