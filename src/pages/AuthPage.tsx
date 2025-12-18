@@ -50,7 +50,7 @@ export const AuthPage = () => {
           <Send size={32} className="ml-1" />
         </div>
         <h1 className="text-3xl font-bold text-gray-900 tracking-tight">MailCOM</h1>
-        <p className="text-gray-500 mt-2">智能邮件管理系统</p>
+        <p className="text-gray-500 mt-2">邮件管理系统</p>
       </div>
 
       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-gray-100 p-8 animate-slide-up">

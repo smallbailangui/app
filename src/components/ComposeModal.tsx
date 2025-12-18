@@ -132,15 +132,14 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center pointer-events-none">
-      {/* Backdrop - Added z-0 to ensure it stays behind */}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"> {/* 移除 pointer-events-none */}
       <div
-        className="absolute inset-0 bg-black/20 pointer-events-auto z-0"
+        className="absolute inset-0 bg-black/20 z-0"
         onClick={() => { if (!isSending) onClose(); }}
       />
       
       {/* Modal Content - Added relative and z-10 to sit above backdrop */}
-      <div className="bg-white w-full sm:w-[600px] sm:h-[650px] h-[90%] sm:rounded-xl shadow-2xl flex flex-col pointer-events-auto overflow-hidden animate-slide-up sm:mb-8 relative z-10">
+      <div className="bg-white w-full sm:w-[600px] sm:h-[650px] h-[90%] sm:rounded-xl shadow-2xl flex flex-col overflow-hidden animate-slide-up relative z-10">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b border-gray-200 shrink-0">
           <h3 className="font-medium text-gray-700">新邮件</h3>

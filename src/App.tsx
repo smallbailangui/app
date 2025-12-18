@@ -276,7 +276,7 @@ const InnerApp = () => {
 
   if (authLoading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-gray-50">
+      <div className="h-full w-full flex items-center justify-center bg-gray-50">
         <Loader2 className="animate-spin text-blue-600" size={32} />
       </div>
     );
@@ -338,7 +338,7 @@ const InnerApp = () => {
   };
 
   return (
-    <div className="flex h-screen bg-white">
+    <div className="flex h-full bg-white overflow-hidden">
       <Sidebar
         role={user.role}
         currentView={currentView}
