@@ -75,7 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className={`w-8 h-8 ${role === 'ADMIN' ? 'bg-purple-600' : 'bg-blue-600'} rounded-lg flex items-center justify-center text-white`}>
           {role === 'ADMIN' ? <ShieldCheck size={18} /> : <Send size={18} className="ml-1" />}
         </div>
-        MailAI
+        MailCOM
         {role === 'ADMIN' && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full ml-auto">管理员</span>}
       </div>
 

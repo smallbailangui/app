@@ -29,6 +29,7 @@ const InnerApp = () => {
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inboxUnreadCount, setInboxUnreadCount] = useState<number>(0);
   
   // Compose State
   const [isComposeOpen, setIsComposeOpen] = useState(false);
@@ -53,6 +54,32 @@ const InnerApp = () => {
     }
   }, [currentView, user]);
 
+  useEffect(() => {
+    if (currentView !== "inbox") return;
+    setInboxUnreadCount(emails.filter((e) => !e.isRead).length);
+  }, [currentView, emails]);
+
+  useEffect(() => {
+    if (!user) return;
+    let isCancelled = false;
+
+    const refreshInboxUnreadCount = async () => {
+      if (currentView === "inbox") return;
+      try {
+        const inboxEmails = await api.getEmails("inbox");
+        if (isCancelled) return;
+        setInboxUnreadCount(inboxEmails.filter((e) => !e.isRead).length);
+      } catch {}
+    };
+
+    refreshInboxUnreadCount();
+    const intervalId = window.setInterval(refreshInboxUnreadCount, 15000);
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [user, currentView]);
+
   const loadEmails = async (folder: Folder) => {
     setIsLoading(true);
     setSelectedEmail(null);
@@ -60,6 +87,9 @@ const InnerApp = () => {
     try {
       const data = await api.getEmails(folder);
       setEmails(data);
+      if (folder === "inbox") {
+        setInboxUnreadCount(data.filter((e) => !e.isRead).length);
+      }
     } catch (err) {
       console.error("Error loading emails:", err);
       setError("无法连接到邮件服务器。");
@@ -315,7 +345,7 @@ const InnerApp = () => {
         onNavigate={setCurrentView}
         onCompose={() => { setComposeDraft(null); setIsComposeOpen(true); }}
         onLogout={logout}
-        unreadCount={currentView === "inbox" ? emails.filter((e) => !e.isRead).length : undefined}
+        unreadCount={inboxUnreadCount}
       />
       
       {/* Main Layout Area */}

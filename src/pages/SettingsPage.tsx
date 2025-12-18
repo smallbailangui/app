@@ -157,7 +157,7 @@ export const SettingsPage = () => {
                     onChange={(e) => setSignature(e.target.value)}
                     rows={4}
                     className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                    placeholder="Sent from my MailAI..."
+                    placeholder="Sent from my MailCOM..."
                   />
                 </div>
                 <div className="pt-4">

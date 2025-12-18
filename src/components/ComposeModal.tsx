@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { X, File as FileIcon, Send, Paperclip, Save, Radio, Users } from "lucide-react";
+import { X, File as FileIcon, Send, Paperclip, Save, Radio, Users, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { groupApi } from "../api/api";
 import { Group, Email } from "../types";
@@ -7,9 +7,9 @@ import { Group, Email } from "../types";
 interface ComposeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSend: (to: string[], subject: string, body: string, files: File[]) => void;
-  onSaveDraft?: (to: string[], subject: string, body: string) => void;
-  onDelete?: () => void;
+  onSend: (to: string[], subject: string, body: string, files: File[]) => void | Promise<void>;
+  onSaveDraft?: (to: string[], subject: string, body: string) => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
   initialTo?: string;
   initialSubject?: string;
   initialBody?: string;
@@ -41,10 +41,12 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
   const [isGroupOpen, setIsGroupOpen] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   
   const [files, setFiles] = useState<File[]>([]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -55,11 +57,19 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
     setIsBroadcast(shouldDefaultBroadcast);
     setSelectedGroupIds([]);
     setIsGroupOpen(false);
+    setIsSending(false);
   }, [isOpen, initialTo, initialSubject, initialBody, isAdmin, lockTo]);
 
   useEffect(() => {
     if (lockTo && isBroadcast) setIsBroadcast(false);
   }, [lockTo]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -90,30 +100,35 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
   };
 
   const handleSendClick = async () => {
+      if (isSending) return;
+      setIsSending(true);
       const broadcast = isBroadcast && !lockTo;
-      if (broadcast) {
-        onSend(["ALL_USERS"], subject, body, files);
-        return;
-      }
-      const typed = to.split(",").map(s => s.trim()).filter(Boolean);
-      const selfEmail = user?.email ? user.email.trim().toLowerCase() : null;
-      let groupRecipients: string[] = [];
-      if (!lockTo) {
-        for (const gid of selectedGroupIds) {
-          try {
-            const members = await groupApi.getGroupMembers(gid);
-            groupRecipients.push(...members.map(m => m.email));
-          } catch {}
+      try {
+        if (broadcast) {
+          await Promise.resolve(onSend(["ALL_USERS"], subject, body, files));
+          return;
         }
+        const typed = to.split(",").map(s => s.trim()).filter(Boolean);
+        const selfEmail = user?.email ? user.email.trim().toLowerCase() : null;
+        let groupRecipients: string[] = [];
+        if (!lockTo) {
+          for (const gid of selectedGroupIds) {
+            try {
+              const members = await groupApi.getGroupMembers(gid);
+              groupRecipients.push(...members.map(m => m.email));
+            } catch {}
+          }
+        }
+        if (selfEmail) {
+          groupRecipients = groupRecipients.filter(e => (e || "").trim().toLowerCase() !== selfEmail);
+        }
+        const unique = Array.from(new Set([...typed, ...groupRecipients]));
+        const forwardSuffix = forwardOf ? `\n\n---------- 转发的邮件 ---------\n发件人: ${forwardOf.from.name} <${forwardOf.from.email}>\n收件人: ${forwardOf.to.join(", ")}\n日期: ${new Date(forwardOf.date).toLocaleString()}\n主题: ${forwardOf.subject}\n\n${forwardOf.body}` : "";
+        const finalBody = forwardSuffix ? `${body ? body + "\n\n" : ""}${forwardSuffix}` : body;
+        await Promise.resolve(onSend(unique, subject, finalBody, files));
+      } finally {
+        if (isMountedRef.current) setIsSending(false);
       }
-      if (selfEmail) {
-        groupRecipients = groupRecipients.filter(e => (e || "").trim().toLowerCase() !== selfEmail);
-      }
-      // Deduplicate
-      const unique = Array.from(new Set([...typed, ...groupRecipients]));
-      const forwardSuffix = forwardOf ? `\n\n---------- 转发的邮件 ---------\n发件人: ${forwardOf.from.name} <${forwardOf.from.email}>\n收件人: ${forwardOf.to.join(", ")}\n日期: ${new Date(forwardOf.date).toLocaleString()}\n主题: ${forwardOf.subject}\n\n${forwardOf.body}` : "";
-      const finalBody = forwardSuffix ? `${body ? body + "\n\n" : ""}${forwardSuffix}` : body;
-      onSend(unique, subject, finalBody, files);
   }
 
   return (
@@ -121,7 +136,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
       {/* Backdrop - Added z-0 to ensure it stays behind */}
       <div
         className="absolute inset-0 bg-black/20 pointer-events-auto z-0"
-        onClick={onClose}
+        onClick={() => { if (!isSending) onClose(); }}
       />
       
       {/* Modal Content - Added relative and z-10 to sit above backdrop */}
@@ -130,8 +145,9 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
         <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b border-gray-200 shrink-0">
           <h3 className="font-medium text-gray-700">新邮件</h3>
           <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-200"
+            onClick={() => { if (!isSending) onClose(); }}
+            className={`text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-200 ${isSending ? "opacity-50 cursor-not-allowed" : ""}`}
+            disabled={isSending}
           >
             <X size={20} />
           </button>
@@ -279,8 +295,9 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
             />
             <button 
               onClick={() => fileInputRef.current?.click()}
-              className="hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors"
+              className={`hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors ${isSending ? "opacity-50 cursor-not-allowed" : ""}`}
               title="添加附件"
+              disabled={isSending}
             >
               <Paperclip size={20} />
             </button>
@@ -290,16 +307,26 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
             {onSaveDraft && (
                 <button
                     onClick={() => onSaveDraft([to], subject, body)}
-                    className="text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-colors border border-gray-300"
+                    className={`text-gray-600 px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-colors border border-gray-300 ${isSending ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-100"}`}
+                    disabled={isSending}
                 >
                     <Save size={16} /> 保存草稿
                 </button>
             )}
             <button
                 onClick={handleSendClick}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium flex items-center gap-2 transition-colors shadow-sm"
+                className={`bg-blue-600 text-white px-6 py-2 rounded-full font-medium flex items-center gap-2 transition-colors shadow-sm ${isSending ? "opacity-80 cursor-not-allowed" : "hover:bg-blue-700"}`}
+                disabled={isSending}
             >
-                {isBroadcast ? '全员广播' : '发送'} <Send size={16} />
+                {isSending ? (
+                  <>
+                    发送中 <Loader2 size={16} className="animate-spin" />
+                  </>
+                ) : (
+                  <>
+                    {isBroadcast ? '全员广播' : '发送'} <Send size={16} />
+                  </>
+                )}
             </button>
           </div>
         </div>
