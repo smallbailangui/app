@@ -15,6 +15,7 @@ export const SettingsPage = () => {
   // Password State
   const [oldPass, setOldPass] = useState("");
   const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
   
   // Server Config State
   const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
@@ -51,11 +52,19 @@ export const SettingsPage = () => {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
+
+    if (newPass !== confirmPass) {
+      setMessage({ type: "error", text: "两次输入的密码不一致" });
+      setLoading(false);
+      return;
+    }
+
     try {
       await userApi.changePassword(oldPass, newPass);
       setMessage({ type: "success", text: "密码修改成功" });
       setOldPass("");
       setNewPass("");
+      setConfirmPass("");
     } catch (e) {
       setMessage({ type: "error", text: "修改密码失败" });
     } finally {
@@ -182,6 +191,17 @@ export const SettingsPage = () => {
                     minLength={6}
                     value={newPass}
                     onChange={(e) => setNewPass(e.target.value)}
+                    className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">确认新密码</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={confirmPass}
+                    onChange={(e) => setConfirmPass(e.target.value)}
                     className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>
